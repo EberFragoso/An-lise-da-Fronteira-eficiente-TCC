@@ -1,0 +1,797 @@
+!pip install yfinance
+import sys
+print(sys.executable)
+!pip list | grep yfinance
+!/opt/conda/envs/anaconda-2022.05-py39/bin/python -m pip install yfinance
+!sudo /opt/conda/envs/anaconda-2022.05-py39/bin/python -m pip install yfinance
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Carregar o CSV original e ajustar as colunas
+dados = pd.read_csv('DadosTcc.csv', sep=';', decimal=',')
+
+# Remover o símbolo de porcentagem e substituir vírgulas para converter para float nas colunas de retorno
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+for coluna in colunas_retorno:
+    dados[coluna] = dados[coluna].str.replace('%', '').str.replace(',', '.').astype(float)
+
+# Criar índice de data
+datas = pd.date_range(start='2017-01-01', periods=len(dados), freq='MS')
+dados['Data'] = datas
+dados.set_index('Data', inplace=True)
+
+# Salvar o DataFrame ajustado em um novo arquivo
+dados.to_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',')
+
+# Selecionar colunas de ativos e IPCA
+colunas_ativos = ['IBOV Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'Selic Retorno% /Mês']
+coluna_ipca = 'IPCA Retorno % /Mês'
+
+# Criar o gráfico com dois eixos y
+fig, ax1 = plt.subplots(figsize=(12, 6))
+
+# Plotar IBOV, Ouro, Dólar e Selic no eixo y principal
+for coluna in colunas_ativos:
+    if coluna == 'Selic Retorno% /Mês':
+        ax1.plot(dados.index, dados[coluna], label=coluna, color='black', linestyle='-')  # Selic com cor diferente
+    else:
+        ax1.plot(dados.index, dados[coluna], label=coluna)
+
+ax1.set_ylabel('Retorno dos Ativos (%)')
+ax1.legend(loc='upper left')
+
+# Criar um segundo eixo y para IPCA
+ax2 = ax1.twinx()
+ax2.plot(dados.index, dados[coluna_ipca], linestyle='--', color='red', label=coluna_ipca)
+ax2.set_ylabel('Retorno do IPCA (%)')
+ax2.legend(loc='upper right')
+
+plt.title('Retornos Mensais dos Ativos')
+plt.grid()
+plt.savefig('grafico_retornos.png', dpi=300)
+plt.show()
+
+import numpy as np
+
+# Calcular os retornos médios dos ativos
+retornos_medios = dados[['IBOV Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'Selic Retorno% /Mês']].mean()
+print("Retornos Médios (% ao mês):")
+print(retornos_medios)
+
+# Calcular a matriz de covariância dos retornos
+matriz_covariancia = dados[['IBOV Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'Selic Retorno% /Mês']].cov()
+print("\nMatriz de Covariância dos Retornos:")
+print(matriz_covariancia)
+
+
+# Salvar os retornos médios em um arquivo CSV
+retornos_medios.to_csv('retornos_medios.csv', header=True)
+
+# Salvar a matriz de covariância em um arquivo CSV
+matriz_covariancia.to_csv('matriz_covariancia.csv')
+
+
+# Função para calcular a variância da carteira
+def variancia_carteira(pesos):
+    return np.dot(pesos.T, np.dot(covariancia, pesos))
+
+# Função de restrição (soma dos pesos deve ser 1)
+def restricao_soma_pesos(pesos):
+    return np.sum(pesos) - 1
+
+# Limites para os pesos (entre 0 e 1)
+limites = [(0, 1) for _ in range(len(retornos_medios))]
+
+# Peso inicial (iguais para todos os ativos)
+pesos_iniciais = np.ones(len(retornos_medios)) / len(retornos_medios)
+
+# Otimização para minimizar a variância da carteira
+resultado = sco.minimize(variancia_carteira, pesos_iniciais, method='SLSQP', bounds=limites, constraints={'type': 'eq', 'fun': restricao_soma_pesos})
+
+# Exibir resultados
+pesos_otimizados = resultado.x
+variancia_minima = resultado.fun
+risco_minimo = np.sqrt(variancia_minima)
+
+print("Pesos da carteira de risco mínimo:")
+for ativo, peso in zip(['IBOV', 'Selic', 'Ouro', 'Dólar', 'IPCA'], pesos_otimizados):
+    print(f"{ativo}: {peso:.4f}")
+
+print(f"\nVariância da carteira de risco mínimo: {variancia_minima:.4f}")
+print(f"Desvio padrão da carteira de risco mínimo (Risco): {risco_minimo:.4f}")
+
+import matplotlib.pyplot as plt
+
+# Dados dos pesos da carteira de risco mínimo
+pesos = {
+    'IBOV': 0.1865,
+    'Selic': 0.1171,
+    'Ouro': 0.3157,
+    'Dólar': 0.3795,
+    'IPCA': 0.0013
+}
+
+# Gerar o gráfico de pizza
+fig, ax = plt.subplots(figsize=(8, 6))
+ax.pie(pesos.values(), labels=pesos.keys(), autopct='%1.1f%%', startangle=140)
+ax.set_title('Distribuição da Carteira de Risco Mínimo')
+
+# Salvar o gráfico como arquivo PNG
+plt.savefig('grafico_carteira_risco_minimo.png')
+
+# Exibir o gráfico
+plt.show()
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+# Carregar o arquivo de dados ajustado
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retornos, substituir valores não numéricos, e converter para decimal
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+for coluna in colunas_retorno:
+    dados[coluna] = pd.to_numeric(dados[coluna], errors='coerce') / 100  # Dividir por 100 para converter de % para decimal
+
+# Remover linhas com valores NaN após a conversão
+retornos = dados[colunas_retorno].dropna()
+retornos_medios = retornos.mean() * 12  # Anualizar os retornos médios
+cov_matrix = retornos.cov() * 12  # Anualizar a matriz de covariância
+
+# Funções auxiliares
+def retorno_portfolio(pesos, retornos):
+    """Calcula o retorno da carteira dado um array de pesos."""
+    return np.sum(pesos * retornos)
+
+def risco_portfolio(pesos, covariancia):
+    """Calcula o risco (desvio padrão) da carteira dado um array de pesos."""
+    return np.sqrt(np.dot(pesos.T, np.dot(covariancia, pesos)))
+
+# Simular a fronteira eficiente
+n_portfolios = 5000
+retornos_carteiras = []
+riscos_carteiras = []
+pesos_carteiras = []
+
+for _ in range(n_portfolios):
+    # Gerar pesos aleatórios e normalizar para somarem 1
+    pesos = np.random.random(len(retornos.columns))
+    pesos /= np.sum(pesos)
+    
+    # Calcular retorno e risco
+    retorno = retorno_portfolio(pesos, retornos_medios)
+    risco = risco_portfolio(pesos, cov_matrix)
+    
+    retornos_carteiras.append(retorno)
+    riscos_carteiras.append(risco)
+    pesos_carteiras.append(pesos)
+
+# Converter para arrays para fácil manipulação
+retornos_carteiras = np.array(retornos_carteiras)
+riscos_carteiras = np.array(riscos_carteiras)
+pesos_carteiras = np.array(pesos_carteiras)
+
+# Gráfico da Fronteira Eficiente Completa
+plt.figure(figsize=(12, 8))
+plt.scatter(riscos_carteiras, retornos_carteiras, c=retornos_carteiras / riscos_carteiras, cmap='viridis')
+plt.colorbar(label='Índice de Sharpe')
+plt.xlabel('Risco (Desvio Padrão Anualizado)')
+plt.ylabel('Retorno Esperado Anualizado')
+plt.title('Fronteira Eficiente Completa')
+plt.grid(True)
+
+# Salvar o gráfico
+plt.savefig('fronteira_eficiente_completa.png', format='png')
+
+# Mostrar o gráfico
+plt.show()
+
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# Carregar os dados
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno e renomear para simplificar os rótulos
+colunas_retorno = {
+    'IBOV Retorno% /Mês': 'IBOV',
+    'Selic Retorno% /Mês': 'Selic',
+    'Ouro Retorno% /Mês': 'Ouro',
+    'Dólar Retorno% /Mês': 'Dólar',
+    'IPCA Retorno % /Mês': 'IPCA'
+}
+retornos_ativos = dados[list(colunas_retorno.keys())].rename(columns=colunas_retorno)
+
+# Calcular a matriz de correlação
+correlacao_ativos = retornos_ativos.corr()
+
+# Plotar e salvar a matriz de correlação
+plt.figure(figsize=(8, 6))
+sns.heatmap(correlacao_ativos, annot=True, cmap="coolwarm", fmt=".2f", cbar=True)
+plt.title("Matriz de Correlação dos Ativos")
+plt.savefig("Matriz_Correlacao_Ativos.png")  # Salva o gráfico como imagem
+plt.show()
+
+# Salvar a tabela de correlação em um arquivo CSV
+correlacao_ativos.to_csv("Tabela_Correlacao_Ativos.csv")
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados de retornos mensais
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar colunas de retorno dos ativos e converter para valores numéricos
+colunas_retorno = {
+    'IBOV Retorno% /Mês': 'IBOV',
+    'Selic Retorno% /Mês': 'Selic',
+    'Ouro Retorno% /Mês': 'Ouro',
+    'Dólar Retorno% /Mês': 'Dólar',
+    'IPCA Retorno % /Mês': 'IPCA'
+}
+retornos_ativos = dados[list(colunas_retorno.keys())].rename(columns=colunas_retorno)
+retornos_ativos = retornos_ativos.apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)  # Converter para decimal
+
+# Função para calcular o risco (desvio padrão) da carteira
+def risco_portfolio(pesos, cov_matrix):
+    return np.sqrt(np.dot(pesos.T, np.dot(cov_matrix, pesos)))
+
+# Otimização para obter a composição de risco mínimo
+def otimizar_risco_minimo(retornos):
+    cov_matrix = retornos.cov()
+    n_ativos = len(retornos.columns)
+    pesos_iniciais = np.ones(n_ativos) / n_ativos
+    limites = [(0, 1) for _ in range(n_ativos)]
+    restricoes = ({'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1})
+
+    resultado = minimize(risco_portfolio, pesos_iniciais, args=(cov_matrix), method='SLSQP', bounds=limites, constraints=restricoes)
+    return resultado.x if resultado.success else np.zeros(n_ativos)
+
+# Lista para armazenar a composição da carteira ao longo do tempo
+pesos_ao_longo_do_tempo = []
+
+# Calcular a composição de risco mínimo para cada período
+for data in retornos_ativos.index:
+    retornos_periodo = retornos_ativos.loc[:data]  # Usar dados até a data atual
+    pesos_min_risco = otimizar_risco_minimo(retornos_periodo)
+    pesos_ao_longo_do_tempo.append(pesos_min_risco)
+
+# Converter lista para DataFrame para facilitar a visualização
+pesos_df = pd.DataFrame(pesos_ao_longo_do_tempo, columns=retornos_ativos.columns, index=retornos_ativos.index)
+
+# Plotar a evolução dos pesos ao longo do tempo
+pesos_df.plot(figsize=(10, 6), stacked=True, kind='area')
+plt.title("Composição da Carteira de Risco Mínimo ao Longo do Tempo")
+plt.ylabel("Peso (%)")
+plt.xlabel("Data")
+plt.legend(title="Ativos")
+plt.show()
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados de retornos mensais
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar colunas de retorno dos ativos e converter para valores numéricos
+colunas_retorno = {
+    'IBOV Retorno% /Mês': 'IBOV',
+    'Selic Retorno% /Mês': 'Selic',
+    'Ouro Retorno% /Mês': 'Ouro',
+    'Dólar Retorno% /Mês': 'Dólar',
+    'IPCA Retorno % /Mês': 'IPCA'
+}
+retornos_ativos = dados[list(colunas_retorno.keys())].rename(columns=colunas_retorno)
+retornos_ativos = retornos_ativos.apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)  # Converter para decimal
+
+# Funções de retorno e risco
+def retorno_portfolio(pesos, retornos_medios):
+    return np.dot(pesos, retornos_medios)
+
+def risco_portfolio(pesos, cov_matrix):
+    return np.sqrt(np.dot(pesos.T, np.dot(cov_matrix, pesos)))
+
+# Função de otimização para máxima utilidade (máximo índice de Sharpe)
+def otimizar_maxima_utilidade(retornos, taxa_livre_risco):
+    retornos_medios = retornos.mean()
+    cov_matrix = retornos.cov()
+    n_ativos = len(retornos.columns)
+    pesos_iniciais = np.ones(n_ativos) / n_ativos
+    limites = [(0, 1) for _ in range(n_ativos)]
+    restricoes = ({'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1})
+    
+    def negativo_sharpe(pesos):
+        retorno = retorno_portfolio(pesos, retornos_medios)
+        risco = risco_portfolio(pesos, cov_matrix)
+        return -(retorno - taxa_livre_risco) / risco  # Maximizar Sharpe (minimizando o negativo)
+    
+    resultado = minimize(negativo_sharpe, pesos_iniciais, method='SLSQP', bounds=limites, constraints=restricoes)
+    return resultado.x if resultado.success else np.zeros(n_ativos)
+
+# Função de otimização para máximo retorno
+def otimizar_maximo_retorno(retornos):
+    retornos_medios = retornos.mean()
+    n_ativos = len(retornos.columns)
+    pesos_iniciais = np.ones(n_ativos) / n_ativos
+    limites = [(0, 1) for _ in range(n_ativos)]
+    restricoes = ({'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1})
+    
+    resultado = minimize(lambda pesos: -retorno_portfolio(pesos, retornos_medios), pesos_iniciais, method='SLSQP', bounds=limites, constraints=restricoes)
+    return resultado.x if resultado.success else np.zeros(n_ativos)
+
+# Taxa livre de risco média (ajuste para dados reais conforme necessário)
+taxa_livre_risco = retornos_ativos['Selic'].mean()
+
+# Listas para armazenar as composições ao longo do tempo
+pesos_max_retorno_ao_longo_tempo = []
+pesos_max_utilidade_ao_longo_tempo = []
+
+# Calcular a composição de máximo retorno e máxima utilidade para cada período
+for data in retornos_ativos.index:
+    retornos_periodo = retornos_ativos.loc[:data]
+    
+    # Carteira de máximo retorno
+    pesos_max_retorno = otimizar_maximo_retorno(retornos_periodo)
+    pesos_max_retorno_ao_longo_tempo.append(pesos_max_retorno)
+    
+    # Carteira de máxima utilidade
+    pesos_max_utilidade = otimizar_maxima_utilidade(retornos_periodo, taxa_livre_risco)
+    pesos_max_utilidade_ao_longo_tempo.append(pesos_max_utilidade)
+
+# Converter listas para DataFrames para visualização
+pesos_max_retorno_df = pd.DataFrame(pesos_max_retorno_ao_longo_tempo, columns=retornos_ativos.columns, index=retornos_ativos.index)
+pesos_max_utilidade_df = pd.DataFrame(pesos_max_utilidade_ao_longo_tempo, columns=retornos_ativos.columns, index=retornos_ativos.index)
+
+# Plotar a evolução dos pesos ao longo do tempo
+fig, axs = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+pesos_max_retorno_df.plot.area(ax=axs[0], stacked=True, legend=True)
+axs[0].set_title("Composição da Carteira de Máximo Retorno ao Longo do Tempo")
+axs[0].set_ylabel("Peso (%)")
+
+pesos_max_utilidade_df.plot.area(ax=axs[1], stacked=True, legend=True)
+axs[1].set_title("Composição da Carteira de Máxima Utilidade ao Longo do Tempo")
+axs[1].set_ylabel("Peso (%)")
+axs[1].set_xlabel("Data")
+
+plt.show()
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados de retornos mensais
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar colunas de retorno dos ativos e converter para valores numéricos
+colunas_retorno = {
+    'IBOV Retorno% /Mês': 'IBOV',
+    'Selic Retorno% /Mês': 'Selic',
+    'Ouro Retorno% /Mês': 'Ouro',
+    'Dólar Retorno% /Mês': 'Dólar',
+    'IPCA Retorno % /Mês': 'IPCA'
+}
+retornos_ativos = dados[list(colunas_retorno.keys())].rename(columns=colunas_retorno)
+retornos_ativos = retornos_ativos.apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)  # Converter para decimal
+
+# Funções de retorno e risco
+def retorno_portfolio(pesos, retornos_medios):
+    return np.dot(pesos, retornos_medios)
+
+def risco_portfolio(pesos, cov_matrix):
+    return np.sqrt(np.dot(pesos.T, np.dot(cov_matrix, pesos)))
+
+# Função de otimização para máxima utilidade (máximo índice de Sharpe)
+def otimizar_maxima_utilidade(retornos, taxa_livre_risco):
+    retornos_medios = retornos.mean()
+    cov_matrix = retornos.cov()
+    n_ativos = len(retornos.columns)
+    pesos_iniciais = np.ones(n_ativos) / n_ativos
+    limites = [(0, 1) for _ in range(n_ativos)]
+    restricoes = ({'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1})
+    
+    def negativo_sharpe(pesos):
+        retorno = retorno_portfolio(pesos, retornos_medios)
+        risco = risco_portfolio(pesos, cov_matrix)
+        return -(retorno - taxa_livre_risco) / risco  # Maximizar Sharpe (minimizando o negativo)
+    
+    resultado = minimize(negativo_sharpe, pesos_iniciais, method='SLSQP', bounds=limites, constraints=restricoes)
+    return resultado.x if resultado.success else np.zeros(n_ativos)
+
+# Função de otimização para máximo retorno
+def otimizar_maximo_retorno(retornos):
+    retornos_medios = retornos.mean()
+    n_ativos = len(retornos.columns)
+    pesos_iniciais = np.ones(n_ativos) / n_ativos
+    limites = [(0, 1) for _ in range(n_ativos)]
+    restricoes = ({'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1})
+    
+    resultado = minimize(lambda pesos: -retorno_portfolio(pesos, retornos_medios), pesos_iniciais, method='SLSQP', bounds=limites, constraints=restricoes)
+    return resultado.x if resultado.success else np.zeros(n_ativos)
+
+# Taxa livre de risco média (ajuste para dados reais conforme necessário)
+taxa_livre_risco = retornos_ativos['Selic'].mean()
+
+# Listas para armazenar as composições ao longo do tempo
+pesos_max_retorno_ao_longo_tempo = []
+pesos_max_utilidade_ao_longo_tempo = []
+
+# Calcular a composição de máximo retorno e máxima utilidade para cada período
+for data in retornos_ativos.index:
+    retornos_periodo = retornos_ativos.loc[:data]
+    
+    # Carteira de máximo retorno
+    pesos_max_retorno = otimizar_maximo_retorno(retornos_periodo)
+    pesos_max_retorno_ao_longo_tempo.append(pesos_max_retorno)
+    
+    # Carteira de máxima utilidade
+    pesos_max_utilidade = otimizar_maxima_utilidade(retornos_periodo, taxa_livre_risco)
+    pesos_max_utilidade_ao_longo_tempo.append(pesos_max_utilidade)
+
+# Converter listas para DataFrames para visualização
+pesos_max_retorno_df = pd.DataFrame(pesos_max_retorno_ao_longo_tempo, columns=retornos_ativos.columns, index=retornos_ativos.index)
+pesos_max_utilidade_df = pd.DataFrame(pesos_max_utilidade_ao_longo_tempo, columns=retornos_ativos.columns, index=retornos_ativos.index)
+
+# Gráfico da Carteira de Máximo Retorno
+plt.figure(figsize=(10, 6))
+pesos_max_retorno_df.plot.area(stacked=True, legend=True)
+plt.title("Composição da Carteira de Máximo Retorno ao Longo do Tempo")
+plt.ylabel("Peso (%)")
+plt.xlabel("Data")
+plt.savefig('composicao_carteira_maximo_retorno.png')
+plt.show()
+
+# Gráfico da Carteira de Máxima Utilidade
+plt.figure(figsize=(10, 6))
+pesos_max_utilidade_df.plot.area(stacked=True, legend=True)
+plt.title("Composição da Carteira de Máxima Utilidade ao Longo do Tempo")
+plt.ylabel("Peso (%)")
+plt.xlabel("Data")
+plt.savefig('composicao_carteira_maxima_utilidade.png')
+plt.show()
+
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import minimize
+
+# Carregar os dados de retornos mensais ajustados
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno e converter para tipo numérico
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+retornos_ativos = dados[colunas_retorno].apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)
+
+# Calcular o retorno médio e matriz de covariância dos ativos
+retornos_medios = retornos_ativos.mean() * 12  # Anualizando o retorno médio
+cov_matrix = retornos_ativos.cov() * 12  # Anualizando a matriz de covariância
+
+# Taxa livre de risco (aproximando pela Selic média anualizada)
+taxa_livre_risco = retornos_medios['Selic Retorno% /Mês']
+
+# Função para calcular o retorno da carteira
+def retorno_portfolio(pesos):
+    return np.dot(pesos, retornos_medios)
+
+# Função para calcular o risco (desvio padrão) da carteira
+def risco_portfolio(pesos):
+    return np.sqrt(np.dot(pesos.T, np.dot(cov_matrix, pesos)))
+
+# Função para calcular o índice de Sharpe da carteira
+def indice_sharpe(pesos):
+    return (retorno_portfolio(pesos) - taxa_livre_risco) / risco_portfolio(pesos)
+
+# Função para otimizar a carteira com base no índice de Sharpe (máxima utilidade)
+def otimizar_sharpe():
+    constraints = [{'type': 'eq', 'fun': lambda x: np.sum(x) - 1}]
+    bounds = tuple((0, 1) for _ in range(len(retornos_medios)))
+    resultado = minimize(lambda x: -indice_sharpe(x), len(retornos_medios) * [1. / len(retornos_medios)], 
+                         bounds=bounds, constraints=constraints)
+    return resultado.x
+
+# Calcular a carteira de máxima utilidade
+pesos_max_sharpe = otimizar_sharpe()
+retorno_esperado_sharpe = retorno_portfolio(pesos_max_sharpe)
+risco_sharpe = risco_portfolio(pesos_max_sharpe)
+
+# Calcular a fronteira eficiente
+retornos_frenteira = []
+riscos_frenteira = []
+
+for retorno_alvo in np.linspace(retornos_medios.min(), retornos_medios.max(), 100):
+    constraints = [{'type': 'eq', 'fun': lambda x: np.sum(x) - 1},
+                   {'type': 'eq', 'fun': lambda x: retorno_portfolio(x) - retorno_alvo}]
+    resultado = minimize(risco_portfolio, len(retornos_medios) * [1. / len(retornos_medios)], 
+                         bounds=bounds, constraints=constraints)
+    if resultado.success:
+        riscos_frenteira.append(risco_portfolio(resultado.x))
+        retornos_frenteira.append(retorno_alvo)
+
+# Plotar a fronteira eficiente e a carteira de máxima utilidade
+plt.figure(figsize=(10, 6))
+plt.plot(riscos_frenteira, retornos_frenteira, 'b--', label='Fronteira Eficiente')
+plt.scatter(risco_sharpe, retorno_esperado_sharpe, color='r', marker='*', s=100, label='Carteira de Máxima Utilidade')
+plt.xlabel('Risco (Desvio Padrão Anualizado)')
+plt.ylabel('Retorno Esperado Anualizado')
+plt.title('Fronteira Eficiente e Carteira de Máxima Utilidade')
+plt.legend()
+plt.grid(True)
+
+# Salvar o gráfico
+plt.savefig('fronteira_eficiente_carteira_utilidade.png')
+plt.show()
+
+# Exibir a composição da carteira eficiente
+print("Composição da Carteira de Máxima Utilidade:")
+for ativo, peso in zip(colunas_retorno, pesos_max_sharpe):
+    print(f"{ativo}: {peso:.4f}")
+print(f"\nRetorno Esperado da Carteira de Máxima Utilidade: {retorno_esperado_sharpe:.4f}")
+print(f"Risco (Desvio Padrão Anualizado) da Carteira de Máxima Utilidade: {risco_sharpe:.4f}")
+
+
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Carregar os dados ajustados de retornos mensais (substitua pelo seu caminho de arquivo)
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno dos ativos e converter para tipo numérico
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+retornos_ativos = dados[colunas_retorno].apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)
+
+# Calcular o retorno médio e desvio padrão mensais
+retornos_medios_mensal = retornos_ativos.mean()
+desvios_padrao_mensal = retornos_ativos.std()
+
+# Usar o retorno médio mensal da Selic como taxa livre de risco mensal
+taxa_livre_risco_mensal = retornos_medios_mensal['Selic Retorno% /Mês']
+
+# Calcular o Índice de Sharpe para cada ativo
+indice_sharpe = (retornos_medios_mensal - taxa_livre_risco_mensal) / desvios_padrao_mensal
+
+# Criar a tabela de resultados com o Índice de Sharpe
+tabela_sharpe = pd.DataFrame({
+    'Retorno Médio Mensal (%)': retornos_medios_mensal * 100,
+    'Desvio Padrão Mensal (%)': desvios_padrao_mensal * 100,
+    'Índice de Sharpe Mensal': indice_sharpe
+})
+
+# Exibir a tabela de resultados
+print(tabela_sharpe)
+
+# Definir cores específicas para cada ativo e simplificar os nomes dos ativos
+cores = {
+    'IBOV Retorno% /Mês': 'blue',
+    'Selic Retorno% /Mês': 'green',
+    'Ouro Retorno% /Mês': 'gold',
+    'Dólar Retorno% /Mês': 'purple',
+    'IPCA Retorno % /Mês': 'red'
+}
+
+# Dicionário para simplificar os rótulos dos ativos
+nomes_simples = {
+    'IBOV Retorno% /Mês': 'IBOV',
+    'Selic Retorno% /Mês': 'Selic',
+    'Ouro Retorno% /Mês': 'Ouro',
+    'Dólar Retorno% /Mês': 'Dólar',
+    'IPCA Retorno % /Mês': 'IPCA'
+}
+
+# Gerar o gráfico de Índice de Sharpe com cores personalizadas e rótulos simplificados
+plt.figure(figsize=(10, 6))
+plt.bar(tabela_sharpe.index.map(nomes_simples), tabela_sharpe['Índice de Sharpe Mensal'],
+        color=[cores[ativo] for ativo in tabela_sharpe.index])
+plt.xlabel('Ativo')
+plt.ylabel('Índice de Sharpe Mensal')
+plt.title('Índice de Sharpe Mensal por Ativo')
+plt.xticks(rotation=45)
+plt.grid(axis='y')
+
+# Salvar o gráfico
+plt.savefig('indice_sharpe_mensal.png')
+plt.show()
+
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados ajustados
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno dos ativos e converter para tipo numérico
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+retornos_ativos = dados[colunas_retorno].apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)
+
+# Definir a função de otimização para maximizar o índice de Sharpe
+def maximizar_sharpe(pesos, retornos, taxa_livre_risco):
+    retorno_portfolio = np.dot(pesos, retornos.mean())
+    risco_portfolio = np.sqrt(np.dot(pesos.T, np.dot(retornos.cov(), pesos)))
+    return -(retorno_portfolio - taxa_livre_risco) / risco_portfolio
+
+# Restrições e limites dos pesos
+constraints = {'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1}
+bounds = [(0, 1) for _ in colunas_retorno]
+
+# Lista para armazenar os pesos e a rentabilidade ao longo do tempo
+pesos_ao_longo_do_tempo = []
+rentabilidade_mensal = []
+
+# Loop para calcular a composição da carteira de máxima utilidade e rentabilidade em cada mês
+for i in range(len(retornos_ativos)):
+    # Subconjunto dos dados até o mês atual
+    retornos_historicos = retornos_ativos.iloc[:i+1]
+    taxa_livre_risco = retornos_historicos['Selic Retorno% /Mês'].mean()
+
+    # Otimização para encontrar os pesos de máxima utilidade
+    resultado = minimize(
+        maximizar_sharpe,
+        x0=np.ones(len(colunas_retorno)) / len(colunas_retorno),
+        args=(retornos_historicos, taxa_livre_risco),
+        bounds=bounds,
+        constraints=constraints
+    )
+    
+    if resultado.success:
+        pesos = resultado.x
+        pesos_ao_longo_do_tempo.append(pesos)
+        
+        # Calcula a rentabilidade mensal da carteira
+        rentabilidade_mensal.append(np.dot(pesos, retornos_ativos.iloc[i]))
+
+# Calcular rentabilidade acumulada
+rentabilidade_acumulada = (1 + pd.Series(rentabilidade_mensal)).cumprod()
+
+# Gerar gráfico da rentabilidade acumulada
+plt.figure(figsize=(10, 6))
+plt.plot(rentabilidade_acumulada.index, rentabilidade_acumulada, label='Carteira de Máxima Utilidade')
+plt.xlabel('Data')
+plt.ylabel('Rentabilidade Acumulada')
+plt.title('Rentabilidade Acumulada da Carteira de Máxima Utilidade ao Longo do Tempo')
+plt.legend()
+plt.grid(True)
+
+# Salvar o gráfico
+plt.savefig('rentabilidade_acumulada_max_utilidade.png')
+plt.show()
+
+# Exibir a rentabilidade total do período
+rentabilidade_total = rentabilidade_acumulada.iloc[-1] - 1
+print(f"Rentabilidade total do período: {rentabilidade_total:.2%}")
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados ajustados
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno dos ativos e converter para tipo numérico
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+retornos_ativos = dados[colunas_retorno].apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)
+
+# Função de otimização para risco mínimo
+def minimizar_risco(pesos, cov_matrix):
+    return np.sqrt(np.dot(pesos.T, np.dot(cov_matrix, pesos)))
+
+# Restrições e limites dos pesos
+constraints = {'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1}
+bounds = [(0, 1) for _ in colunas_retorno]
+
+# Lista para armazenar a rentabilidade mensal da carteira de risco mínimo
+rentabilidade_mensal_risco_min = []
+
+# Loop para calcular a rentabilidade ao longo do tempo
+for i in range(len(retornos_ativos)):
+    retornos_historicos = retornos_ativos.iloc[:i+1]
+    cov_matrix = retornos_historicos.cov()
+
+    # Otimização para encontrar os pesos de risco mínimo
+    resultado = minimize(
+        minimizar_risco,
+        x0=np.ones(len(colunas_retorno)) / len(colunas_retorno),
+        args=(cov_matrix,),
+        bounds=bounds,
+        constraints=constraints
+    )
+    
+    if resultado.success:
+        pesos = resultado.x
+        rentabilidade_mensal_risco_min.append(np.dot(pesos, retornos_ativos.iloc[i]))
+    else:
+        rentabilidade_mensal_risco_min.append(np.nan)
+
+# Calcular rentabilidade acumulada e ajustar o índice para datas reais
+rentabilidade_acumulada_risco_min = (1 + pd.Series(rentabilidade_mensal_risco_min, index=retornos_ativos.index)).cumprod()
+
+# Gerar gráfico da rentabilidade acumulada
+plt.figure(figsize=(10, 6))
+plt.plot(rentabilidade_acumulada_risco_min.index, rentabilidade_acumulada_risco_min, label='Carteira de Risco Mínimo')
+plt.xlabel('Data')
+plt.ylabel('Rentabilidade Acumulada')
+plt.title('Rentabilidade Acumulada da Carteira de Risco Mínimo ao Longo do Tempo')
+plt.legend()
+plt.grid(True)
+
+# Salvar o gráfico
+plt.savefig('rentabilidade_acumulada_risco_min.png')
+plt.show()
+
+# Exibir a rentabilidade total do período
+rentabilidade_total_risco_min = rentabilidade_acumulada_risco_min.dropna().iloc[-1] - 1
+print(f"Rentabilidade total da carteira de risco mínimo no período: {rentabilidade_total_risco_min:.2%}")
+
+
+import pandas as pd
+import numpy as np
+from scipy.optimize import minimize
+import matplotlib.pyplot as plt
+
+# Carregar dados ajustados
+dados = pd.read_csv('DadosTcc_Ajustado.csv', sep=';', decimal=',', parse_dates=['Data'], index_col='Data')
+
+# Selecionar as colunas de retorno dos ativos e converter para tipo numérico
+colunas_retorno = ['IBOV Retorno% /Mês', 'Selic Retorno% /Mês', 'Ouro Retorno% /Mês', 'Dólar Retorno% /Mês', 'IPCA Retorno % /Mês']
+retornos_ativos = dados[colunas_retorno].apply(lambda x: pd.to_numeric(x, errors='coerce') / 100)
+
+# Função de otimização para máximo retorno
+def maximizar_retorno(pesos, retornos):
+    return -np.dot(pesos, retornos.mean())
+
+# Restrições e limites dos pesos
+constraints = {'type': 'eq', 'fun': lambda pesos: np.sum(pesos) - 1}
+bounds = [(0, 1) for _ in colunas_retorno]
+
+# Lista para armazenar a rentabilidade mensal da carteira de máximo retorno
+rentabilidade_mensal_max_retorno = []
+
+# Loop para calcular a rentabilidade ao longo do tempo
+for i in range(len(retornos_ativos)):
+    retornos_historicos = retornos_ativos.iloc[:i+1]
+
+    # Otimização para encontrar os pesos de máximo retorno
+    resultado = minimize(
+        maximizar_retorno,
+        x0=np.ones(len(colunas_retorno)) / len(colunas_retorno),
+        args=(retornos_historicos,),
+        bounds=bounds,
+        constraints=constraints
+    )
+    
+    if resultado.success:
+        pesos = resultado.x
+        rentabilidade_mensal_max_retorno.append(np.dot(pesos, retornos_ativos.iloc[i]))
+    else:
+        rentabilidade_mensal_max_retorno.append(np.nan)
+
+# Calcular rentabilidade acumulada e ajustar o índice para datas reais
+rentabilidade_acumulada_max_retorno = (1 + pd.Series(rentabilidade_mensal_max_retorno, index=retornos_ativos.index)).cumprod()
+
+# Gerar gráfico da rentabilidade acumulada
+plt.figure(figsize=(10, 6))
+plt.plot(rentabilidade_acumulada_max_retorno.index, rentabilidade_acumulada_max_retorno, label='Carteira de Máximo Retorno')
+plt.xlabel('Data')
+plt.ylabel('Rentabilidade Acumulada')
+plt.title('Rentabilidade Acumulada da Carteira de Máximo Retorno ao Longo do Tempo')
+plt.legend()
+plt.grid(True)
+
+# Salvar o gráfico
+plt.savefig('rentabilidade_acumulada_max_retorno.png')
+plt.show()
+
+# Exibir a rentabilidade total do período
+rentabilidade_total_max_retorno = rentabilidade_acumulada_max_retorno.dropna().iloc[-1] - 1
+print(f"Rentabilidade total da carteira de máximo retorno no período: {rentabilidade_total_max_retorno:.2%}")
+
+
